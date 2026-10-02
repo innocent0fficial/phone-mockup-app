@@ -8,7 +8,8 @@
 
     <application
         android:allowBackup="false"
-        android:label="Phone Mockup"
+        android:icon="@mipmap/ic_launcher"
+        android:label="313 Edits"
         android:theme="@android:style/Theme.DeviceDefault.Light.NoActionBar">
 
         <activity

@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>html,body{margin:0;padding:0;background:#fff}</style>
+  <!-- Offline logo: put team313.png in the assets folder (same folder as this file) -->
+  <script src="team313-loader.js" data-logo="team313.png" data-fade="0"></script>
+  <script>
+    // Loader finished -> tell the app to remove this screen (no redirect, same Activity)
+    window.addEventListener('team313loader:done', function () {
+      if (window.AndroidLoader) window.AndroidLoader.done();
+    });
+  </script>
+</head>
+<body></body>
+</html>
