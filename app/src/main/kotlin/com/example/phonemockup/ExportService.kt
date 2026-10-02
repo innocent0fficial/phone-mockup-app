@@ -21,6 +21,7 @@ import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.effect.BitmapOverlay
+import androidx.media3.effect.Brightness
 import androidx.media3.effect.MatrixTransformation
 import androidx.media3.effect.OverlayEffect
 import androidx.media3.effect.Presentation
@@ -40,7 +41,7 @@ class ExportService : Service() {
 
     companion object {
         const val ACTION_CANCEL = "com.example.phonemockup.CANCEL"
-        const val VIDEO_BITRATE = 5_000_000   // 5 Mbps -> about 2.2 GB per hour
+        const val VIDEO_BITRATE = 8_000_000   // 8 Mbps -> about 3.6 GB per hour
         private const val CHANNEL = "export"
     }
 
@@ -142,13 +143,15 @@ class ExportService : Service() {
             tempFile = out
 
             val overlay = BitmapOverlay.createStaticBitmapOverlay(Mockup.buildOverlay(this, aspect))
-            val videoEffects = listOf<Effect>(
+            val videoEffects = mutableListOf<Effect>()
+            if (Mockup.BRIGHTNESS != 0f) videoEffects.add(Brightness(Mockup.BRIGHTNESS))
+            videoEffects.add(
                 Presentation.createForWidthAndHeight(
                     Mockup.OUT_W, Mockup.OUT_H, Presentation.LAYOUT_SCALE_TO_FIT
-                ),
-                MatrixTransformation { Mockup.videoMatrix() },
-                OverlayEffect(ImmutableList.of(overlay))
+                )
             )
+            videoEffects.add(MatrixTransformation { Mockup.videoMatrix(aspect) })
+            videoEffects.add(OverlayEffect(ImmutableList.of(overlay)))
             val item = EditedMediaItem.Builder(MediaItem.fromUri(uri))
                 .setEffects(Effects(emptyList(), videoEffects))
                 .build()

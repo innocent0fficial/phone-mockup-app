@@ -36,31 +36,40 @@ object ExportState {
     }
 }
 
-/** Fixed layout of the output video (1920x1080) - change numbers here to move the phone. */
+/** Fixed 9:16 layout (1080x1920) for TikTok / YouTube Shorts / Reels. */
 object Mockup {
-    const val OUT_W = 1920
-    const val OUT_H = 1080
-    const val SCREEN_H = 860f      // height of the phone screen in pixels
-    const val BEZEL = 22f          // black border around the screen
-    const val CENTER_X = 560f      // phone centre, from left
-    const val CENTER_Y = 540f      // phone centre, from top
+    const val OUT_W = 1080
+    const val OUT_H = 1920
+    const val BEZEL = 20f          // black border around the screen
+    const val MARGIN_X = 40f       // minimum gap: phone to left/right edge
+    const val MARGIN_Y = 36f       // minimum gap: phone to top/bottom edge
     const val SHOW_NOTCH = true
+    const val BRIGHTNESS = 0f      // -1..1, 0 = no change (recording colours stay true)
+    const val BG_FOCUS = 1.0f      // 0 = left part of the background photo, 1 = right part
+    const val BG_BLUR_DIV = 6      // bigger number = blurrier background
+    const val BG_VEIL = 0x26FFFFFF // soft white veil so the background stays secondary
 
-    /** Moves/shrinks the video (already letterboxed to 1920x1080) into the phone screen. */
-    fun videoMatrix(): Matrix {
-        val s = SCREEN_H / OUT_H
-        val tx = (CENTER_X - OUT_W / 2f) / (OUT_W / 2f)
-        val ty = -(CENTER_Y - OUT_H / 2f) / (OUT_H / 2f)
-        return Matrix().apply {
-            postScale(s, s)
-            postTranslate(tx, ty)
-        }
+    /** Biggest screen height that fits, for this recording's shape. */
+    fun screenHeight(aspect: Float): Float {
+        val byHeight = OUT_H - 2 * (MARGIN_Y + BEZEL)
+        val byWidth = (OUT_W - 2 * (MARGIN_X + BEZEL)) / aspect
+        return minOf(byHeight, byWidth)
     }
 
-    /** Full-frame picture: background + phone body, with a transparent hole where the video shows. */
+    /** Shrinks the letterboxed video so it fits exactly into the phone screen (centred). */
+    fun videoMatrix(aspect: Float): Matrix {
+        val sh = screenHeight(aspect)
+        val frameAspect = OUT_W.toFloat() / OUT_H
+        val h0 = if (aspect <= frameAspect) OUT_H.toFloat() else OUT_W / aspect
+        val s = sh / h0
+        return Matrix().apply { postScale(s, s) }
+    }
+
+    /** Full-frame picture: soft background + phone body, with a transparent hole for the video. */
     fun buildOverlay(context: Context, aspect: Float): Bitmap {
         val bmp = Bitmap.createBitmap(OUT_W, OUT_H, Bitmap.Config.ARGB_8888)
         val c = Canvas(bmp)
+        val full = Rect(0, 0, OUT_W, OUT_H)
 
         val bg = try {
             context.assets.open("background.png").use { BitmapFactory.decodeStream(it) }
@@ -68,7 +77,14 @@ object Mockup {
             null
         }
         if (bg != null) {
-            c.drawBitmap(bg, null, Rect(0, 0, OUT_W, OUT_H), Paint(Paint.FILTER_BITMAP_FLAG))
+            // crop a 9:16 slice of the landscape photo, blur it by shrinking then enlarging
+            val cropW = (bg.height * OUT_W.toFloat() / OUT_H).toInt().coerceAtMost(bg.width)
+            val x0 = ((bg.width - cropW) * BG_FOCUS).toInt()
+            val src = Rect(x0, 0, x0 + cropW, bg.height)
+            val small = Bitmap.createBitmap(OUT_W / BG_BLUR_DIV, OUT_H / BG_BLUR_DIV, Bitmap.Config.ARGB_8888)
+            Canvas(small).drawBitmap(bg, src, Rect(0, 0, small.width, small.height), Paint(Paint.FILTER_BITMAP_FLAG))
+            c.drawBitmap(small, null, full, Paint(Paint.FILTER_BITMAP_FLAG))
+            small.recycle()
             bg.recycle()
         } else {
             val p = Paint()
@@ -78,12 +94,13 @@ object Mockup {
             )
             c.drawRect(0f, 0f, OUT_W.toFloat(), OUT_H.toFloat(), p)
         }
+        c.drawColor(BG_VEIL)
 
-        val sw = SCREEN_H * aspect
-        val screen = RectF(
-            CENTER_X - sw / 2, CENTER_Y - SCREEN_H / 2,
-            CENTER_X + sw / 2, CENTER_Y + SCREEN_H / 2
-        )
+        val sh = screenHeight(aspect)
+        val sw = sh * aspect
+        val cx = OUT_W / 2f
+        val cy = OUT_H / 2f
+        val screen = RectF(cx - sw / 2, cy - sh / 2, cx + sw / 2, cy + sh / 2)
         val body = RectF(
             screen.left - BEZEL, screen.top - BEZEL,
             screen.right + BEZEL, screen.bottom + BEZEL
@@ -91,16 +108,16 @@ object Mockup {
 
         val bodyPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = 0xFF111111.toInt()
-            setShadowLayer(40f, 0f, 18f, 0x66000000)
+            setShadowLayer(60f, 0f, 24f, 0x55000000)
         }
-        c.drawRoundRect(body, 64f, 64f, bodyPaint)
+        c.drawRoundRect(body, 100f, 100f, bodyPaint)
 
         val rim = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             style = Paint.Style.STROKE
             strokeWidth = 4f
             color = 0xFF3C3C3C.toInt()
         }
-        c.drawRoundRect(body, 64f, 64f, rim)
+        c.drawRoundRect(body, 100f, 100f, rim)
 
         // transparent hole (2px smaller than the video so no edge line shows)
         val hole = RectF(screen)
@@ -108,13 +125,13 @@ object Mockup {
         val clear = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             xfermode = PorterDuffXfermode(PorterDuff.Mode.CLEAR)
         }
-        c.drawRoundRect(hole, 42f, 42f, clear)
+        c.drawRoundRect(hole, 80f, 80f, clear)
 
         if (SHOW_NOTCH) {
             val pill = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = 0xFF111111.toInt() }
             c.drawRoundRect(
-                RectF(CENTER_X - 55f, screen.top + 14f, CENTER_X + 55f, screen.top + 40f),
-                13f, 13f, pill
+                RectF(cx - 75f, screen.top + 22f, cx + 75f, screen.top + 56f),
+                17f, 17f, pill
             )
         }
         return bmp
